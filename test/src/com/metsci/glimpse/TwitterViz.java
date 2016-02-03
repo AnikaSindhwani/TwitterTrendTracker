@@ -11,11 +11,8 @@ import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Image;
-import java.awt.Insets;
 import java.awt.Paint;
 import java.awt.Shape;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseListener;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.io.BufferedReader;
@@ -82,10 +79,15 @@ public class TwitterViz
     private static HashMap<String, Integer> followers = new HashMap<String, Integer>();
     private static double min;
     private static double max;
-    private static double sigma;
+    private static double sigma = 10;
     public TwitterViz( String topic )
     {
         TwitterViz.topic = topic;
+    }
+    public TwitterViz( String topic, double sigma )
+    {
+        TwitterViz.topic = topic;
+        TwitterViz.sigma = sigma;
     }
 
     @SuppressWarnings( { "unchecked", "rawtypes" } )
@@ -126,8 +128,8 @@ public class TwitterViz
                         //boolean = true/false
                         index = main.getString( "text" ).indexOf( topic, index + 1 );
                     }
-                    //System.out.println( main.getString( "text" ) );
-
+                    
+                    //stores all tweets with a geolocation in a hashmap
                     if ( main.has( "place" ) && !main.isNull( "place" ) )
                     {
                         if ( main.getJSONObject( "place" ).has( "bounding_box" ) && main.getJSONObject( "place" ).optJSONObject( "bounding_box" ) != null )
@@ -160,6 +162,8 @@ public class TwitterViz
                                 geoMap.put( main.getString( "text" ), boundingBox );
                         }
                     }
+                    
+                    //stores tweets with dates in a hashmap
                     String date = "";
                     if ( main.has( "created_at" ) && !main.isNull( "created_at" ) )
                     {
@@ -176,6 +180,7 @@ public class TwitterViz
                             dateMap.put( df.parse( date ), new ArrayList<String>( Arrays.asList( main.getString( "text" ) ) ) );
                     }
                     
+                    //stores tweets with the # of followers the user has in a hashmap to establish influence of tweet
                     int numFollowers = 0;
                     if ( main.has( "user" ) && !main.isNull( "user" ) ) 
                         if ( main.getJSONObject( "user" ).has( "followers_count" ) && !main.getJSONObject( "user" ).isNull( "followers_count" ) )
@@ -199,13 +204,12 @@ public class TwitterViz
                         weightage.put(df.parse( date ), main.getString("text"));
                     }
                             
-
+                    //to be used later in reference to network mapping
                     /*if(main.has("in_reply_to") && !main.isNull( "in_reply_to" ))
                     {
                     
                     }*/
                 }
-
             }
             
             if(geoMap.isEmpty())
@@ -213,7 +217,6 @@ public class TwitterViz
                 System.out.println("This string was not found.");
                 return; 
             }
-            
             
             //calculate or read in sentiment analysis data (from Indico)
             sentimentMap = new HashMap<String, Double>( geoMap.size( ) );
@@ -283,13 +286,13 @@ public class TwitterViz
                 }
                 else
                 {
-                    sentimentByTime.put( date, Arrays.asList( totalSentiment, tweets.size()*1.0 ) ); //**may not work
+                    sentimentByTime.put( date, Arrays.asList( totalSentiment, tweets.size()*1.0 ) ); 
                 }
-                //avgSentiment = avgSentiment / tweets.size( ) - .5;
                 next = ( Entry<Date, ArrayList<String>> ) it.next( );
             }
             
-            sigma = 10;//1/geoMap.size( );
+            //change sigma based on dataset size (geoMap.size())
+            //sigma = 
             
             createGraph(topic, sentimentByTime);
         }
@@ -298,9 +301,11 @@ public class TwitterViz
             e.printStackTrace( );
         }
     }
+    
     private static HashMap<Integer, List<Double>> storedSentiment = new HashMap<Integer, List<Double>>();
     private static void createGraph(String topic, TreeMap<Date, List<Double>> sentiment) throws MalformedURLException, IOException
     {
+        //create frequency by time plot
         JFreeChart timeChart = ChartFactory.createScatterPlot( "TwitterViz: \""+topic+"\"", "Time", "Frequency", createTimeDataset(topic, sentiment), PlotOrientation.VERTICAL, true, true, false );
         
         XYPlot timePlot = (XYPlot) timeChart.getPlot(); 
@@ -315,9 +320,8 @@ public class TwitterViz
         timePlot.setDomainAxis(domainAxis);
         timePanel.getChart( ).removeLegend( );
         timePanel.setPreferredSize( new java.awt.Dimension(560, 367) );
-        //timePanel.chartChanged( event );
-        //System.out.println(timePanel);
         
+        //create heat map plot
         NumberAxis xAxis = new NumberAxis();
         xAxis.setAxisLineVisible( false );
         xAxis.setMinorTickMarksVisible( true );
@@ -328,6 +332,8 @@ public class TwitterViz
         XYBlockRenderer blockRenderer = new XYBlockRenderer(); 
         myXYPlot heatPlot = new myXYPlot(new XYZArrayDataset( generateHeatData(1000, 500) ), xAxis, yAxis, blockRenderer);
         heatPlot.setBackgroundPaint(Color.lightGray);
+        
+        //create gradient paint scale
         min = Math.round(min*1e2)/1e2;
         max = Math.round(max*1e2)/1e2;
         double range = Math.max(Math.abs(min), Math.abs(max));
@@ -336,18 +342,17 @@ public class TwitterViz
         for(double k = -range; k < 0; k+=.1)
         {
             k = Math.round(k*1e2)/1e2;
-            paintScale.add(k, new Color(255, 0, 0, (int)(25.5*Math.abs(k))));
-            //paintScale.add(k, new Color((int)(Math.max( 0, 255-(128/range)*(k+range))), Math.min( 255, (int)((128/range)*(k+range))), 0, 100)); //k[-1,1] R[0,256]
+            paintScale.add(k, new Color(255, 0, 0, Math.min((int)(25.5*Math.abs(k)), 255)));
         }
         paintScale.add(0, new Color(0, 0, 0, 0));
         for(double k = 0; k < range; k+=.1)
         {
             k = Math.round(k*1e2)/1e2;
-            paintScale.add(k, new Color(0, 255, 0, (int)(25.5*k)));
-            //paintScale.add(k, new Color((int)(Math.max( 0, 255-(128/range)*(k+range))), Math.min( 255, (int)((128/range)*(k+range))), 0, 100)); //k[-1,1] R[0,256]
+            paintScale.add(k, new Color(0, 255, 0, Math.min((int)(25.5*k), 255)));
         }
         blockRenderer.setPaintScale( paintScale );
         
+        //customize heat map plot
         JFreeChart heatChart = new JFreeChart(heatPlot);
         heatChart.removeLegend( );
         NumberAxis scaleAxis = new NumberAxis("Scale");
@@ -365,17 +370,17 @@ public class TwitterViz
         legend.setPosition(RectangleEdge.RIGHT);
         heatChart.addSubtitle(legend);
         
+        //add image of Earth to the background of the plot
         Image map = ImageIO.read(new URL("http://worldtraveladventuresbat.com/wp-content/themes/sw_go/assets/img/guidemap.gif"));
         heatPlot.setBackgroundImage( map );
         
         ChartPanel heatPanel = new ChartPanel(heatChart, false);
         heatPanel.setPreferredSize( new java.awt.Dimension(560, 367) );
         
-        
+        //add both plots to singular frame
         JFrame frame = new JFrame();
         frame.getContentPane( ).add( timePanel, BorderLayout.WEST );
         frame.getContentPane( ).add( heatPanel, BorderLayout.EAST);
-        //frame.setContentPane( timePanel );
         frame.setSize( 1150, 400 );
         frame.setPreferredSize( new java.awt.Dimension(1150, 400) );
         frame.setVisible( true );
@@ -383,7 +388,8 @@ public class TwitterViz
         
         RefineryUtilities.centerFrameOnScreen( frame );
         
-        timePanel.addMouseListener( new MouseListener( )
+        //use this to check for zoom in plot, to link the frequency by time and heat map plots
+        /*timePanel.addMouseListener( new MouseListener( )
         {
             
             @Override
@@ -419,9 +425,7 @@ public class TwitterViz
                 // TODO Auto-generated method stub
                 //double zoomValue = timePanel.getZoomInFactor( ); //is this necessary, or can we simply get the plot bounds.
             }
-        } );
-        
-        
+        } );*/
     }
     
     private static class Renderer extends XYLineAndShapeRenderer {
@@ -446,6 +450,8 @@ public class TwitterViz
             g2.draw(shape);
         }
     }
+    
+    //gets data from hashmap, formats it to create dataset for frequency by time plot
     @SuppressWarnings( { "unchecked", "rawtypes" } )
     private static TimeSeriesCollection createTimeDataset(String topic, TreeMap<Date, List<Double>> sentiment)
     {
@@ -464,13 +470,13 @@ public class TwitterViz
             {
                 data.addOrUpdate( new Minute(next.getKey()), next.getValue().get(1).intValue( ) + data.getValue( new Minute(next.getKey()) ).intValue( ) );
                 storedSentiment.put( data.getIndex(new Minute(next.getKey( ))), Arrays.asList( next.getValue().get(0).doubleValue( )+storedSentiment.get( data.getIndex(new Minute(next.getKey( ))) ).get( 0 ), next.getValue().get(1).doubleValue( )+storedSentiment.get( data.getIndex(new Minute(next.getKey( ))) ).get( 1 )) );
-                //System.out.println(data.getIndex(new Minute(next.getKey( ))) + " " + storedSentiment.get(data.getIndex(new Minute(next.getKey( )))));
             }
             next = ( Entry<Date, List<Double>> ) it.next( );
         }
         dataset.addSeries( data );
         return dataset;
     }
+    
     private static class myXYPlot extends XYPlot {
 
         private static final long serialVersionUID = 1L;
@@ -492,6 +498,8 @@ public class TwitterViz
         * @param area
         *            the area.
         */
+        
+       //used to draw image of Earth behind the heat map plot, zoom in and out of pic based on overall zoom of heat map plot
        public void drawBackgroundImage(Graphics2D g2, Rectangle2D area) {
           Image backgroundImage = super.getBackgroundImage();
           float backgroundAlpha = super.getBackgroundAlpha();
@@ -541,12 +549,12 @@ public class TwitterViz
        }
 
     }
+    
+    //take in data from geo hashmap, format to create dataset for hashmap
     public static double[][] generateHeatData( int sizeX, int sizeY )
     {
-        // generate some data to display
-        double[][] sumArr = new double[0][];
-       // double[][] sumArrPrim = new double[0][];
         //Gaussian Calculation
+        double[][] sumArr = new double[0][];
         sumArr = new double[sizeX][sizeY];
         for ( double[] row : sumArr )
             Arrays.fill( row, 0.0 );
@@ -571,18 +579,14 @@ public class TwitterViz
                 {
                     Double sentiment = 0.0;
                     if ( sentimentMap.containsKey( text ) ) sentiment = sentimentMap.get( text ) - .5;
-                    //sumArr[x][y] += sentiment * Math.exp(-(Math.pow((x) * ResolutionDiff - avgx + 180,2)/ 2 + Math.pow((y * ResolutionDiff - avgy + 90),2) / 2));
                     double gx = -180 + 360 * ( ( double ) x / ( double ) ( sumArr.length - 1 ) );
                     double gy = -90 + 180 * ( ( double ) y / ( double ) ( sumArr[0].length - 1 ) );
                     double xd = gx - avgx;
                     double yd = gy - avgy;
-                    //double xd = x-avgx;
-                    //double yd = y-avgy;
 
                     sumArr[x][y] += sentiment * Math.exp( - ( xd * xd  + yd * yd ) / (2 * sigma * sigma) );
                     if(sumArr[x][y] < 0.001 && sumArr[x][y] > -0.001)
                     {
-                        //System.out.println("check");
                         sumArr[x][y] = 0d;
                     }
                     max = Math.max( max, sumArr[x][y] );
@@ -590,35 +594,9 @@ public class TwitterViz
                 }
             }
         }
-
-       /* 
-
-        sumArrPrim = new double[sumArr.length][sumArr[0].length];
-        for ( int i = 0; i < sumArr.length; i++ )
-        {
-            for ( int j = 0; j < sumArr[0].length; j++ )
-            {
-                //sumArr[i][j] = Math.pow(10, 13) * sumArr[i][j];
-                //System.out.print( sumArr[i][j] + " " );
-                if ( Double.isNaN( sumArr[i][j] ) )
-                {
-                    sumArr[i][j] = 0d;
-                }
-                
-                sumArrPrim[i][j] = Math.log10( sumArr[i][j].doubleValue( ) )/100;
-                if(sumArrPrim[i][j] > -1000)
-                {
-                    max = Math.max( max, sumArrPrim[i][j] );
-                    min = Math.min( min, sumArrPrim[i][j] );
-                }
-                if(sumArrPrim[i][j] >= 0.01 || sumArrPrim[i][j] <= -0.01)
-                    System.out.println(sumArr[i][j]);
-            }
-            //System.out.print( "\n" );
-        }
-        System.out.println( min + " " + max );*/
         return sumArr;
     }
+    
     private static class XYZArrayDataset extends AbstractXYZDataset{
         private static final long serialVersionUID = 1L;
         double[][] data;
